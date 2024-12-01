@@ -1,3 +1,4 @@
+import difflib
 import json
 import random
 import socket
@@ -5,6 +6,7 @@ import uuid
 from queue import Queue
 from threading import Thread, Lock
 
+from common import operations
 from common.operations_converter import *
 
 server_address = ("localhost", 5000)
@@ -16,6 +18,7 @@ class Client:
         self.waiting_operation = None
         self.state_updated = False
         self.document_text = ""
+        self.uncheked_text = ""
         self.text_actuality = 0
 
         
@@ -34,6 +37,31 @@ class Client:
         with self.lock:
             self.waiting.put(operation)
 
+    def send_operations(self, current_text):
+        while True:
+            matcher = difflib.SequenceMatcher(None, self.uncheked_text, current_text)
+            opcodes = matcher.get_opcodes()
+            if opcodes[0][0] in {'equal', "replace"}:
+                if len(opcodes) == 1:
+                    break
+                opcode = opcodes[1]
+            else:
+                opcode = opcodes[0]
+            operation = None
+            if opcode[0] == 'insert':
+                inserted_text = current_text[opcode[3]:opcode[4]]
+                index = opcode[1]
+                operation = operations.InsertOperation(index, inserted_text)
+            elif opcode[0] == 'delete':
+                begin = opcode[1]
+                end = opcode[2]
+                operation = operations.DeleteOperation(begin, end)
+            if operation:
+                self.put_operation_in_waiting(operation)
+                self.uncheked_text = operation.do(self.uncheked_text)
+                continue
+            break
+                
     def send(self):
         while True:
             if self.waiting_operation or self.waiting.empty():
@@ -57,7 +85,7 @@ class Client:
                 elif response['operation'] == 'deny':
                     with self.lock:
                         self.waiting = Queue()
-                        self.document_text = response['file']
+                        self.document_text = self.uncheked_text = response['file']
                         self.text_actuality = response['actuality']
                         self.state_updated = True
                 else:
@@ -66,7 +94,9 @@ class Client:
                         self.text_actuality = response['actuality']
                         if type(operation) is ConnectServerOperation:
                             continue
+                        self.waiting = Queue()
                         self.document_text = operation.do(self.document_text)
+                        self.uncheked_text = self.document_text
                         self.state_updated = True
                 
             except socket.error:
@@ -99,6 +129,7 @@ class Client:
             response = self.get_response(sock)
             self.server_con = sock
             self.document_text = response['file']
+            self.uncheked_text = self.document_text
             self.text_actuality = response['actuality']
             Thread(target=self.receive).start()
             Thread(target=self.send).start()

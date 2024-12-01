@@ -1,16 +1,14 @@
 import curses
-import difflib
 import time
 
 from client import Client
-from common import operations
 
 
 class TextEditor:
     def __init__(self, client):
         self.client = client
         self.text = client.document_text.split("\n")
-        self.prev_text = client.document_text
+        # self.prev_text = client.document_text
         self.cursor_x = 0
         self.cursor_y = 0
         self.history = []
@@ -18,39 +16,11 @@ class TextEditor:
         self.text_changed = False
         
 
-    def send_operation(self):
+    def sync_text(self):
         current_text = "\n".join(self.text)
-        matcher = difflib.SequenceMatcher(None, self.prev_text, current_text)
-        opcodes = matcher.get_opcodes()
-        
-        # for operation in opcodes:
-        #     if operation[0] == 'insert':
-        #         inserted_text = current_text[operation[3]:operation[4]]
-        #         index = operation[1]
-        #         self.client.put_operation_in_waiting(
-        #             operations.InsertOperation(index, inserted_text))
-        #     elif operation[0] == 'delete':
-        #         begin = operation[1]
-        #         end = operation[2]
-        #         self.client.put_operation_in_waiting(
-        #             operations.DeleteOperation(begin, end))
+        client.send_operations(current_text)
+        # self.prev_text = current_text
 
-
-        if opcodes[0][0] == 'equal':
-            operation = opcodes[1]
-        else:
-            operation = opcodes[0]
-        if operation[0] == 'insert':
-            inserted_text = current_text[operation[3]:operation[4]]
-            index = operation[1]
-            self.client.put_operation_in_waiting(
-                operations.InsertOperation(index, inserted_text))
-        elif operation[0] == 'delete':
-            begin = operation[1]
-            end = operation[2]
-            self.client.put_operation_in_waiting(
-                operations.DeleteOperation(begin, end))
-        self.prev_text = current_text
 
     def Run(self, stdscr):
         curses.curs_set(1)  
@@ -108,9 +78,12 @@ class TextEditor:
                     pass  # Игнорируем неотображаемые символы
             
             if self.text_changed and time.time() - self.last_save_time > 1:
-                self.send_operation()
+                self.sync_text()
                 self.last_save_time = time.time()
                 self.text_changed = False
+            
+            self.cursor_y = min(max(self.cursor_y, 0), len(self.text) - 1)
+            self.cursor_x = min(max(self.cursor_x, 0), len(self.text[self.cursor_y]))
 
 
 if __name__ == '__main__':
