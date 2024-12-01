@@ -2,9 +2,7 @@ import asyncio
 import socket
 from queue import Queue
 import json
-import uuid
 from threading import Thread, Lock
-from collections import defaultdict
 
 from common.operations_converter import convert_operation
 from common.operations import *
@@ -15,9 +13,8 @@ class Server:
         self.ip = ip
         self.port = port
         self.pending_processing = Queue()
-        self.doc_state = defaultdict(str)
+        self.doc_state = ""
         self.connected_users = {}
-        self.previous_operations = {}
         self.thread = Thread(target=self.process_requests).start()
         self.lock = Lock()
         self.previous_operation = None
@@ -40,66 +37,43 @@ class Server:
             operation = request['operation']
             operation = operation_from_json(operation)
             request['operation'] = operation
-
-            previous_operation = None
-            text = None
-            if 'file_id' in request:
-                if request['file_id'] in self.previous_operations:
-                    previous_operation = self.previous_operations[request['file_id']]
-            else:
-                text = self.doc_state[request['file_id']] 
-                
-            applied_operation = self.apply_operation(request, previous_operation, text)
-            
+            applied_operation = self.apply_operation(request)
             self.send_to_users(request, applied_operation)
 
     def send_to_users(self, request, applied_operation):
-        file_id = request['file_id']
-        ack = {"operation": "ack", "file_id": file_id}
+        ack = {"operation": "ack"}
         
-        if type(applied_operation) in {ConnectServerOperation, CreateServerOperation}:
-            ack["file"] = self.doc_state[file_id]
+        if type(applied_operation) in ConnectServerOperation:
+            ack["file"] = self.doc_state
             ack = json.dumps(ack).encode()
-            self.connected_users[file_id][request['user_id']].sendall(ack)
+            self.connected_users[request['user_id']].sendall(ack)
             return
         
         ack = json.dumps(ack).encode()
         share = json.dumps({"operation": applied_operation.to_dict()}).encode()
         
-        for user, conn in self.connected_users[file_id]:
+        for user, conn in self.connected_users:
             if request['user_id'] == user:
                 conn.sendall(ack)
             else:
                 conn.sendall(share)
 
-    def apply_operation(self, request, previous_operation, text):
+    def apply_operation(self, request):
         operation = request['operation']
-        if type(operation) is CreateServerOperation:
-            id = str(uuid.uuid1())
-            self.lock.acquire()
-            self.doc_state[id] = operation.file
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(tuple(request['addr']))
-            self.connected_users[id] = {request['user_id']: sock}
-            self.lock.release()
-            request['file_id'] = id
-            return operation
-
         if type(operation) is ConnectServerOperation:
-            server_to_connect = operation.file_id
-            self.lock.acquire()
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect(tuple(request['addr']))
-            self.connected_users[server_to_connect][request['user_id']] = sock
+            self.lock.acquire()
+            self.connected_users[request['user_id']] = sock
             self.lock.release()
             return operation
 
-        if previous_operation:
-            operation = convert_operation(operation, previous_operation)
+        if self.previous_operation:
+            operation = convert_operation(operation, self.previous_operation)
             
         self.lock.acquire()
-        self.previous_operations[request['file_id']] = operation
-        self.doc_state[request['file_id']] = operation.do(text)
+        self.previous_operation = operation
+        self.doc_state = operation.do(self.doc_state)
         self.lock.release()
         
         return operation

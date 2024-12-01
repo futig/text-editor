@@ -50,39 +50,16 @@ class DeleteOperation(Operation):
         }
 
 
-class CreateServerOperation(Operation):
-
-    def to_dict(self):
-        return {
-            'name': self.name,
-            'file': self.file,
-        }
-
-    def __init__(self, file):
-        self.file = file
-        self.name = 'Create'
-
-    def do(self, text=None):
-        pass
-
-
 
 class ConnectServerOperation(Operation):
 
-    def __init__(self, file_id):
+    def __init__(self):
         self.name = "Connect"
-        self.file_id = file_id
 
     def to_dict(self):
         return {
             'name': self.name,
-            'file_id': self.file_id,
         }
-
-    def do(self, text):
-        raise NotImplementedError
-
-
 
 
 
@@ -91,8 +68,6 @@ def operation_from_json(dict):
         return InsertOperation(dict['index'], dict['text'])
     if dict['name'] == 'Delete':
         return DeleteOperation(dict['begin'], dict['end'])
-    if dict['name'] == 'Create':
-        return CreateServerOperation(dict['file'])
     if dict['name'] == 'Connect':
         return ConnectServerOperation(dict['file_id'])
     return None
