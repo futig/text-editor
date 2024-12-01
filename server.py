@@ -41,48 +41,48 @@ class Server:
             operation = operation_from_json(operation)
             request['operation'] = operation
 
-            if ('file_id' in request and
-                    request['file_id'] in self.previous_operations):
-                previous_operation = self.previous_operations[request['file_id']]
+            previous_operation = None
+            text = None
+            if 'file_id' in request:
+                if request['file_id'] in self.previous_operations:
+                    previous_operation = self.previous_operations[request['file_id']]
             else:
-                previous_operation = None
-            text = None if 'file_id' not in request else self.doc_state[request['file_id']]
-            applied_operation = self.apply_operation(request,
-                                                     previous_operation,
-                                                     text)
-            revision = None  # request_revision + 1
-            self.send_to_users(request, applied_operation, revision, request['file_id'])
+                text = self.doc_state[request['file_id']] 
+                
+            applied_operation = self.apply_operation(request, previous_operation, text)
+            
+            self.send_to_users(request, applied_operation)
 
-    def send_to_users(self, request, applied_operation, revision, file_id):
-        ack = {"operation": "ack",
-               "revision": revision,
-               "file_id": file_id}
+    def send_to_users(self, request, applied_operation):
+        file_id = request['file_id']
+        ack = {"operation": "ack", "file_id": file_id}
+        
         if type(applied_operation) in {ConnectServerOperation, CreateServerOperation}:
             ack["file"] = self.doc_state[file_id]
             ack = json.dumps(ack).encode()
             self.connected_users[file_id][request['user_id']].sendall(ack)
             return
+        
         ack = json.dumps(ack).encode()
-        to_send = {"operation": applied_operation.to_dict(),
-                   "revision": revision}
-        sin = json.dumps(to_send).encode()
-        for user in self.connected_users[file_id]:
+        share = json.dumps({"operation": applied_operation.to_dict()}).encode()
+        
+        for user, conn in self.connected_users[file_id]:
             if request['user_id'] == user:
-                self.connected_users[file_id][user].sendall(ack)
+                conn.sendall(ack)
             else:
-                self.connected_users[file_id][user].sendall(sin)
+                conn.sendall(share)
 
     def apply_operation(self, request, previous_operation, text):
         operation = request['operation']
         if type(operation) is CreateServerOperation:
-            id = self.create_server(operation)
+            id = str(uuid.uuid1())
             self.lock.acquire()
             self.doc_state[id] = operation.file
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect(tuple(request['addr']))
             self.connected_users[id] = {request['user_id']: sock}
-            request['file_id'] = id
             self.lock.release()
+            request['file_id'] = id
             return operation
 
         if type(operation) is ConnectServerOperation:
@@ -96,16 +96,13 @@ class Server:
 
         if previous_operation:
             operation = convert_operation(operation, previous_operation)
+            
+        self.lock.acquire()
         self.previous_operations[request['file_id']] = operation
         self.doc_state[request['file_id']] = operation.do(text)
-        print(self.doc_state[request['file_id']])
+        self.lock.release()
+        
         return operation
-
-    def create_server(self, operation):
-        id = str(uuid.uuid1())
-        self.pending_processing = Queue()
-        self.doc_state[id] = operation.file
-        return id
 
 
 async def start_server():

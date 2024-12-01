@@ -28,20 +28,16 @@ def _delete_delete(delete: DeleteOperation, prev_delete: DeleteOperation) -> Del
 
 
 def convert_operation(operation, previous_operation):
-    if not previous_operation or type(previous_operation) is CreateServerOperation:
+    if not previous_operation:
         return operation
     if type(previous_operation) is InsertOperation:
         if type(operation) is InsertOperation:
-            operation_to_perform = _insert_insert(previous_operation,
-                                                  operation)
+            operation_to_perform=_insert_insert(previous_operation,operation)
         elif type(operation) is DeleteOperation:
-            operation_to_perform = _insert_delete(previous_operation,
-                                                  operation)
+            operation_to_perform=_insert_delete(previous_operation,operation)
     elif type(previous_operation) is DeleteOperation:
         if type(operation) is InsertOperation:
-            operation_to_perform = _delete_insert(previous_operation,
-                                                  operation)
+            operation_to_perform=_delete_insert(previous_operation,operation)
         elif type(operation) is DeleteOperation:
-            operation_to_perform = _delete_delete(previous_operation,
-                                                  operation)
+            operation_to_perform=_delete_delete(previous_operation,operation)
     return operation_to_perform

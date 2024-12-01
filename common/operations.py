@@ -9,10 +9,6 @@ class Operation:
         pass
 
     @abstractmethod
-    def redo(self):
-        pass
-
-    @abstractmethod
     def to_dict(self):
         pass
 
@@ -25,9 +21,6 @@ class InsertOperation(Operation):
 
     def do(self, text):
         return f"{text[:self.index]}{self.text_to_insert}{text[self.index:]}"
-
-    def redo(self):
-        raise NotImplementedError
 
     def to_dict(self):
         return {
@@ -48,9 +41,6 @@ class DeleteOperation(Operation):
     def do(self, text):
         temp = f"{text[:self.begin]}{text[self.end:]}"
         return temp
-
-    def redo(self):
-        raise NotImplementedError
 
     def to_dict(self):
         return {
@@ -75,8 +65,6 @@ class CreateServerOperation(Operation):
     def do(self, text=None):
         pass
 
-    def redo(self):
-        raise NotImplementedError
 
 
 class ConnectServerOperation(Operation):
@@ -84,9 +72,6 @@ class ConnectServerOperation(Operation):
     def __init__(self, file_id):
         self.name = "Connect"
         self.file_id = file_id
-
-    def redo(self):
-        raise NotImplementedError
 
     def to_dict(self):
         return {
@@ -98,12 +83,7 @@ class ConnectServerOperation(Operation):
         raise NotImplementedError
 
 
-# class StyleOperation(Operation):
-#     def redo(self):
-#         pass
-#
-#     def do(self):
-#         pass
+
 
 
 def operation_from_json(dict):
