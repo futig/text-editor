@@ -13,8 +13,11 @@ class Client:
     def __init__(self):
         self.guid: str = str(uuid.uuid1())
         self.waiting = Queue()
+        self.waiting_operation = None
         self.state_updated = False
-        self.doc_state = ""
+        self.document_text = ""
+        self.text_actuality = 0
+
         
         self.addr = ('localhost', random.Random().randint(20000, 60000))
         self.receiver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -28,15 +31,16 @@ class Client:
         self.lock = Lock()
 
     def put_operation_in_waiting(self, operation):
-        self.waiting.put(operation)
+        with self.lock:
+            self.waiting.put(operation)
 
     def send(self):
         while True:
-            if self.waiting.unfinished_tasks > 0 or self.waiting.empty():
+            if self.waiting_operation or self.waiting.empty():
                 continue
             with self.lock:
-                operation = self.waiting.get()
-                request = self.create_request(operation)
+                self.waiting_operation = self.waiting.get()
+                request = self.create_request(self.waiting_operation)
                 self.sender.send(request.encode())
 
     def receive(self):
@@ -44,22 +48,34 @@ class Client:
             try:
                 response = self.get_response(self.server_con)
                 if response['operation'] == 'ack':
-                    self.waiting.task_done()
+                    with self.lock:
+                        self.waiting.task_done()
+                        self.document_text = self.waiting_operation.do(self.document_text)
+                        self.waiting_operation = None
+                        self.text_actuality = response['actuality']
+                        continue    
+                elif response['operation'] == 'deny':
+                    with self.lock:
+                        self.waiting = Queue()
+                        self.document_text = response['file']
+                        self.text_actuality = response['actuality']
+                        self.state_updated = True
                 else:
                     operation = operation_from_json(response['operation'])
-                    self.apply_changes(operation)
+                    with self.lock:
+                        self.text_actuality = response['actuality']
+                        if type(operation) is ConnectServerOperation:
+                            continue
+                        self.document_text = operation.do(self.document_text)
+                        self.state_updated = True
+                
             except socket.error:
                 raise socket.error
-
-    def apply_changes(self, operation):
-        if type(operation) is ConnectServerOperation:
-            return
-        self.doc_state = operation.do(self.doc_state)
-        self.state_updated = True
 
     def create_request(self, operation):
         dict = {
             'user_id': self.guid,
+            'actuality': self.text_actuality,
             'operation': operation.to_dict(),
         }
         return json.dumps(dict)
@@ -82,11 +98,11 @@ class Client:
             sock, _ = self.receiver.accept()
             response = self.get_response(sock)
             self.server_con = sock
-            if response['file']:
-                self.doc_state = response['file']
-                Thread(target=self.receive).start()
-                Thread(target=self.send).start()
-            
+            self.document_text = response['file']
+            self.text_actuality = response['actuality']
+            Thread(target=self.receive).start()
+            Thread(target=self.send).start()
+        
     
     def get_response(self, sock):
         data = []

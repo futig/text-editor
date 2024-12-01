@@ -9,8 +9,8 @@ from common import operations
 class TextEditor:
     def __init__(self, client):
         self.client = client
-        self.text = client.doc_state.split("\n")
-        self.prev_text = client.doc_state
+        self.text = client.document_text.split("\n")
+        self.prev_text = client.document_text
         self.cursor_x = 0
         self.cursor_y = 0
         self.history = []
@@ -23,6 +23,19 @@ class TextEditor:
         matcher = difflib.SequenceMatcher(None, self.prev_text, current_text)
         opcodes = matcher.get_opcodes()
         
+        # for operation in opcodes:
+        #     if operation[0] == 'insert':
+        #         inserted_text = current_text[operation[3]:operation[4]]
+        #         index = operation[1]
+        #         self.client.put_operation_in_waiting(
+        #             operations.InsertOperation(index, inserted_text))
+        #     elif operation[0] == 'delete':
+        #         begin = operation[1]
+        #         end = operation[2]
+        #         self.client.put_operation_in_waiting(
+        #             operations.DeleteOperation(begin, end))
+
+
         if opcodes[0][0] == 'equal':
             operation = opcodes[1]
         else:
@@ -40,10 +53,10 @@ class TextEditor:
         self.prev_text = current_text
 
     def Run(self, stdscr):
-        curses.curs_set(1)
+        curses.curs_set(1)  
         while True:
             if self.client.state_updated:
-                self.text = self.client.doc_state.split("\n")
+                self.text = self.client.document_text.split("\n")
             stdscr.clear()
 
             for idx, line in enumerate(self.text):

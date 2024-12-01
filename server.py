@@ -13,11 +13,19 @@ class Server:
         self.ip = ip
         self.port = port
         self.pending_processing = Queue()
-        self.doc_state = "kcsdnjcsd"
+        self.document_text = ""
+        self.text_actuality = 0
+        self.previous_actuality = 4095
         self.connected_users = {}
         self.thread = Thread(target=self.process_requests).start()
         self.lock = Lock()
         self.previous_operation = None
+
+
+    def increment_text_actuality(self):
+        self.previous_actuality = self.text_actuality
+        self.text_actuality = (self.text_actuality + 1) % 4096
+
 
     async def handle_client(self, reader, writer):
         while True:
@@ -29,35 +37,40 @@ class Server:
                     break
             if request == [""]:
                 return
-            try:
-                request_new = json.loads("".join(request))
-            except:
-                print()
-                print(request)
-                print()
-            self.pending_processing.put((writer, request_new))
+            request_new = json.loads("".join(request))
+            self.pending_processing.put(request_new)
 
     def process_requests(self):
         while True:
-            writer, request = self.pending_processing.get()
+            request = self.pending_processing.get()
             operation = request['operation']
             operation = operation_from_json(operation)
             request['operation'] = operation
-            applied_operation = self.apply_operation(request)
-            self.send_to_users(request, applied_operation)
+            applied_operation, ok = self.apply_operation(request)
+            print(f"{self.document_text}\n\n")
+            self.send_to_users(request, applied_operation, ok)
 
-    def send_to_users(self, request, applied_operation):
-        ack = {"operation": "ack"}
-        
-        if type(applied_operation) is ConnectServerOperation:
-            ack["file"] = self.doc_state
-            ack = json.dumps(ack).encode()
-            self.connected_users[request['user_id']].sendall(ack)
+    def send_to_users(self, request, applied_operation, success):
+        response = {"actuality": self.text_actuality}
+        if not success:
+            response["file"] = self.document_text
+            response["operation"] = "deny"
+            response = json.dumps(response).encode()
+            self.connected_users[request['user_id']].sendall(response)
             return
         
-        ack = json.dumps(ack).encode()
-        share = json.dumps({"operation": applied_operation.to_dict()}).encode()
+        if type(applied_operation) is ConnectServerOperation:
+            response["file"] = self.document_text
+            response["operation"] = "ack"
+            response = json.dumps(response).encode()
+            self.connected_users[request['user_id']].sendall(response)
+            return
         
+        response["operation"] = "ack"
+        ack = json.dumps(response).encode()
+        response["operation"] = applied_operation.to_dict()
+        share = json.dumps(response).encode()
+
         for user, conn in self.connected_users.items():
             if request['user_id'] == user:
                 conn.sendall(ack)
@@ -72,17 +85,21 @@ class Server:
             self.lock.acquire()
             self.connected_users[request['user_id']] = sock
             self.lock.release()
-            return operation
+            return operation, True
 
-        if self.previous_operation:
+        actuality = int(request['actuality'])
+        if self.previous_actuality != actuality and self.text_actuality != actuality:
+            return operation, False
+
+        if self.previous_actuality == actuality and self.previous_operation:
             operation = convert_operation(operation, self.previous_operation)
             
-        self.lock.acquire()
-        self.previous_operation = operation
-        self.doc_state = operation.do(self.doc_state)
-        self.lock.release()
+        with self.lock:
+            self.previous_operation = operation
+            self.document_text = operation.do(self.document_text)
+            self.increment_text_actuality()
         
-        return operation
+        return operation, True
 
 
 async def start_server():
