@@ -13,8 +13,8 @@ class Client:
     def __init__(self):
         self.guid: str = str(uuid.uuid1())
         self.waiting = Queue()
-        self.waiting_ack = None
         self.state_updated = False
+        self.doc_state = ""
         
         self.addr = ('localhost', random.Random().randint(20000, 60000))
         self.receiver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -25,8 +25,6 @@ class Client:
         self.server_con = None
         self.connect_to_server()
 
-        self.connected = False
-        self.doc_state = ""
         self.lock = Lock()
 
     def put_operation_in_waiting(self, operation):
@@ -34,23 +32,19 @@ class Client:
 
     def send(self):
         while True:
-            if self.waiting_ack or self.waiting.empty():
+            if self.waiting.unfinished_tasks > 0 or self.waiting.empty():
                 continue
-            self.lock.acquire()
-            operation = self.waiting.get()
-            request = self.create_request(operation)
-            self.sender.send(request.encode())
-            self.waiting_ack = operation
-            self.lock.release()
+            with self.lock:
+                operation = self.waiting.get()
+                request = self.create_request(operation)
+                self.sender.send(request.encode())
 
     def receive(self):
-        while self.connected:
+        while True:
             try:
                 response = self.get_response(self.server_con)
                 if response['operation'] == 'ack':
-                    self.lock.acquire()
-                    self.waiting_ack = None
-                    self.lock.release()
+                    self.waiting.task_done()
                 else:
                     operation = operation_from_json(response['operation'])
                     self.apply_changes(operation)
@@ -67,7 +61,6 @@ class Client:
         dict = {
             'user_id': self.guid,
             'operation': operation.to_dict(),
-            'revision': self.revision
         }
         return json.dumps(dict)
 
@@ -91,7 +84,6 @@ class Client:
             self.server_con = sock
             if response['file']:
                 self.doc_state = response['file']
-                self.connected = True
                 Thread(target=self.receive).start()
                 Thread(target=self.send).start()
             

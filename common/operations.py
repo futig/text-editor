@@ -69,5 +69,5 @@ def operation_from_json(dict):
     if dict['name'] == 'Delete':
         return DeleteOperation(dict['begin'], dict['end'])
     if dict['name'] == 'Connect':
-        return ConnectServerOperation(dict['file_id'])
+        return ConnectServerOperation()
     return None

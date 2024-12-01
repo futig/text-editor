@@ -9,8 +9,8 @@ from common import operations
 class TextEditor:
     def __init__(self, client):
         self.client = client
-        self.text = ['']
-        self.prev_text = ""
+        self.text = client.doc_state.split("\n")
+        self.prev_text = client.doc_state
         self.cursor_x = 0
         self.cursor_y = 0
         self.history = []
@@ -19,10 +19,6 @@ class TextEditor:
         
 
     def send_operation(self):
-        if not self.client.connected:
-            self.prev_text = "\n".join(self.text)
-            return
-        
         current_text = "\n".join(self.text)
         matcher = difflib.SequenceMatcher(None, self.prev_text, current_text)
         opcodes = matcher.get_opcodes()
@@ -106,5 +102,5 @@ class TextEditor:
 
 if __name__ == '__main__':
     client = Client()
-    editor = TextEditor()
+    editor = TextEditor(client)
     curses.wrapper(editor.Run)

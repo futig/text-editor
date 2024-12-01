@@ -13,7 +13,7 @@ class Server:
         self.ip = ip
         self.port = port
         self.pending_processing = Queue()
-        self.doc_state = ""
+        self.doc_state = "kcsdnjcsd"
         self.connected_users = {}
         self.thread = Thread(target=self.process_requests).start()
         self.lock = Lock()
@@ -27,9 +27,15 @@ class Server:
                 request.append(data)
                 if len(data) < 1024:
                     break
-            request = json.loads("".join(request))
-
-            self.pending_processing.put((writer, request))
+            if request == [""]:
+                return
+            try:
+                request_new = json.loads("".join(request))
+            except:
+                print()
+                print(request)
+                print()
+            self.pending_processing.put((writer, request_new))
 
     def process_requests(self):
         while True:
@@ -43,7 +49,7 @@ class Server:
     def send_to_users(self, request, applied_operation):
         ack = {"operation": "ack"}
         
-        if type(applied_operation) in ConnectServerOperation:
+        if type(applied_operation) is ConnectServerOperation:
             ack["file"] = self.doc_state
             ack = json.dumps(ack).encode()
             self.connected_users[request['user_id']].sendall(ack)
@@ -52,7 +58,7 @@ class Server:
         ack = json.dumps(ack).encode()
         share = json.dumps({"operation": applied_operation.to_dict()}).encode()
         
-        for user, conn in self.connected_users:
+        for user, conn in self.connected_users.items():
             if request['user_id'] == user:
                 conn.sendall(ack)
             else:
