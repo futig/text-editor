@@ -33,6 +33,13 @@ class Client:
 
         self.lock = Lock()
 
+    def is_updated(self):
+        return self.state_updated
+    
+    def done_update(self):
+        with self.lock:
+            self.state_updated = False
+
     def put_operation_in_waiting(self, operation):
         with self.lock:
             self.waiting.put(operation)
@@ -41,6 +48,8 @@ class Client:
         while True:
             matcher = difflib.SequenceMatcher(None, self.uncheked_text, current_text)
             opcodes = matcher.get_opcodes()
+            if len(opcodes) == 0:
+                break
             if opcodes[0][0] in {'equal', "replace"}:
                 if len(opcodes) == 1:
                     break

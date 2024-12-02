@@ -5,7 +5,7 @@ from client import Client
 
 
 class TextEditor:
-    def __init__(self, client):
+    def __init__(self, client : Client):
         self.client = client
         self.text = client.document_text.split("\n")
         # self.prev_text = client.document_text
@@ -25,13 +25,18 @@ class TextEditor:
     def Run(self, stdscr):
         curses.curs_set(1)  
         while True:
-            if self.client.state_updated:
+            if self.client.is_updated():
                 self.text = self.client.document_text.split("\n")
+                self.client.done_update()
             stdscr.clear()
 
             for idx, line in enumerate(self.text):
                 stdscr.addstr(idx, 0, line)
 
+
+
+            self.cursor_y = min(len(self.text) - 1, self.cursor_y)
+            self.cursor_x = min(len(self.text[self.cursor_y]), self.cursor_x)
             stdscr.move(self.cursor_y, self.cursor_x)
             stdscr.refresh()
 
